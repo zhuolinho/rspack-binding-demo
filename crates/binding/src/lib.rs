@@ -22,10 +22,15 @@ extern crate rspack_binding_builder;
 //
 // The resolver function should return a `BoxPlugin` instance.
 register_plugin!("MyBannerPlugin", |_env: Env, options: Unknown<'_>| {
-  let banner = options
-    .coerce_to_string()?
-    .into_utf8()?
-    .as_str()?
-    .to_string();
-  Ok(Box::new(plugin::MyBannerPlugin::new(banner)) as BoxPlugin)
+  // Parse options as an object
+  let options_obj = options.coerce_to_object()?;
+
+  // Get chunk_name from options
+  let chunk_name = if let Ok(name) = options_obj.get_named_property::<String>("chunkName") {
+    name
+  } else {
+    "vendors".to_string()
+  };
+
+  Ok(Box::new(plugin::MyBannerPlugin::new(chunk_name)) as BoxPlugin)
 });

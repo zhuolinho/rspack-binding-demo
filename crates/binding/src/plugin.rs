@@ -4,12 +4,25 @@ use rspack_core::{
 };
 use rspack_error::Result;
 use rspack_hook::{plugin, plugin_hook};
+use std::fmt;
+use std::sync::Mutex;
+use std::sync::OnceLock;
+
+// Global storage for callback data
+static CALLBACK_DATA: OnceLock<Mutex<Option<Vec<String>>>> = OnceLock::new();
 
 /// A plugin that creates a vendors chunk and moves node_modules modules to it.
-#[derive(Debug)]
 #[plugin]
 pub struct MyBannerPlugin {
   chunk_name: String,
+}
+
+impl fmt::Debug for MyBannerPlugin {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    f.debug_struct("MyBannerPlugin")
+      .field("chunk_name", &self.chunk_name)
+      .finish()
+  }
 }
 
 impl MyBannerPlugin {
@@ -42,6 +55,7 @@ async fn optimize_chunk_modules(&self, compilation: &mut Compilation) -> Result<
 
   // Collect modules that need to be moved to vendors chunk
   let mut modules_to_move = Vec::new();
+  let mut moved_modules = Vec::new();
 
   // Iterate through all modules to identify node_modules modules
   for module_identifier in modules {
@@ -93,6 +107,16 @@ async fn optimize_chunk_modules(&self, compilation: &mut Compilation) -> Result<
       "MyBannerPlugin: Added module {} to vendors chunk",
       identifier_str
     );
+
+    // Add to moved modules list
+    moved_modules.push(identifier_str);
+  }
+
+  // Store moved modules for callback
+  if !moved_modules.is_empty() {
+    let callback_storage = CALLBACK_DATA.get_or_init(|| Mutex::new(None));
+    *callback_storage.lock().unwrap() = Some(moved_modules);
+    eprintln!("MyBannerPlugin: Stored callback data");
   }
 
   // Return true to indicate that we made changes
@@ -115,5 +139,19 @@ impl Plugin for MyBannerPlugin {
       .optimize_chunk_modules
       .tap(optimize_chunk_modules::new(self));
     Ok(())
+  }
+}
+
+// Function to get callback data (will be called from JavaScript)
+#[napi]
+pub fn get_callback_data() -> Option<Vec<String>> {
+  if let Some(callback_storage) = CALLBACK_DATA.get() {
+    if let Ok(mut data) = callback_storage.lock() {
+      data.take() // Take the data and leave None
+    } else {
+      None
+    }
+  } else {
+    None
   }
 }
