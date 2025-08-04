@@ -2,6 +2,7 @@
   "name": "plugin",
   "private": true,
   "dependencies": {
-    "@rspack-template/core": "workspace:*"
+    "@rspack-template/core": "workspace:*",
+    "lodash": "^4.17.21"
   }
 }
