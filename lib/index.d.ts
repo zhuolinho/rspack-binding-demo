@@ -12,8 +12,9 @@ interface MyBannerPluginOptions {
   /**
    * Callback function that will be called when modules are moved to the vendors chunk.
    * @param movedModules Array of module paths that were moved to the vendors chunk
+   * @param next Function to call when you want to resume the plugin execution
    */
-  callback?: (movedModules: string[]) => void;
+  callback?: (movedModules: string[], next: () => void) => void;
 }
 
 /**

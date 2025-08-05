@@ -8,8 +8,10 @@ use std::fmt;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
-// Global storage for callback data
+// Global storage for callback data and pause state
 static CALLBACK_DATA: OnceLock<Mutex<Option<Vec<String>>>> = OnceLock::new();
+static IS_PAUSED: OnceLock<Mutex<bool>> = OnceLock::new();
+static MODULES_TO_MOVE: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
 /// A plugin that creates a vendors chunk and moves node_modules modules to it.
 #[plugin]
@@ -50,12 +52,72 @@ async fn optimize_chunk_modules(&self, compilation: &mut Compilation) -> Result<
     eprintln!("MyBannerPlugin: Created new vendors chunk");
   }
 
+  // Check if we're paused
+  let pause_storage = IS_PAUSED.get_or_init(|| Mutex::new(false));
+  if *pause_storage.lock().unwrap() {
+    eprintln!("MyBannerPlugin: Still paused, skipping module movement");
+    return Ok(Some(true));
+  }
+
+  // Check if we have stored modules to move (resumed execution)
+  let modules_storage = MODULES_TO_MOVE.get_or_init(|| Mutex::new(Vec::new()));
+  if let Ok(mut stored_modules) = modules_storage.lock() {
+    if !stored_modules.is_empty() {
+      eprintln!("MyBannerPlugin: Moving stored modules to vendors chunk...");
+
+      // Get the modules to move
+      let modules_to_move: Vec<String> = stored_modules.drain(..).collect();
+
+      // First, collect all the module identifiers and their current chunks
+      let mut module_operations = Vec::new();
+
+      for module_path in modules_to_move {
+        // Find the module identifier by path
+        for module_identifier in compilation.built_modules() {
+          if module_identifier.to_string() == module_path {
+            // Get current chunks for this module
+            let current_chunks: Vec<_> = compilation
+              .chunk_graph
+              .get_module_chunks(*module_identifier)
+              .iter()
+              .cloned()
+              .collect();
+
+            module_operations.push((*module_identifier, current_chunks));
+            break;
+          }
+        }
+      }
+
+      // Now perform the operations without borrowing conflicts
+      for (module_identifier, current_chunks) in module_operations {
+        // Remove module from all current chunks
+        for chunk_ukey in current_chunks {
+          compilation
+            .chunk_graph
+            .disconnect_chunk_and_module(&chunk_ukey, module_identifier);
+          eprintln!("MyBannerPlugin: Removed module from chunk {:?}", chunk_ukey);
+        }
+
+        // Add module to vendors chunk
+        compilation
+          .chunk_graph
+          .connect_chunk_and_module(vendors_chunk_ukey, module_identifier);
+        eprintln!("MyBannerPlugin: Added module to vendors chunk");
+      }
+
+      // Force the vendors chunk to be included in the output
+      eprintln!("MyBannerPlugin: Vendors chunk should be emitted with modules");
+
+      return Ok(Some(true));
+    }
+  }
+
   // Get all modules from compilation
   let modules = compilation.built_modules();
 
   // Collect modules that need to be moved to vendors chunk
   let mut modules_to_move = Vec::new();
-  let mut moved_modules = Vec::new();
 
   // Iterate through all modules to identify node_modules modules
   for module_identifier in modules {
@@ -84,39 +146,27 @@ async fn optimize_chunk_modules(&self, compilation: &mut Compilation) -> Result<
     }
   }
 
-  // Now move the modules to vendors chunk
-  for (module_identifier, current_chunks) in modules_to_move {
-    let identifier_str = module_identifier.to_string();
-
-    // Remove module from all current chunks
-    for chunk_ukey in current_chunks {
-      compilation
-        .chunk_graph
-        .disconnect_chunk_and_module(&chunk_ukey, module_identifier);
-      eprintln!(
-        "MyBannerPlugin: Removed module {} from chunk {:?}",
-        identifier_str, chunk_ukey
-      );
-    }
-
-    // Add module to vendors chunk
-    compilation
-      .chunk_graph
-      .connect_chunk_and_module(vendors_chunk_ukey, module_identifier);
-    eprintln!(
-      "MyBannerPlugin: Added module {} to vendors chunk",
-      identifier_str
-    );
-
-    // Add to moved modules list
-    moved_modules.push(identifier_str);
-  }
-
-  // Store moved modules for callback
-  if !moved_modules.is_empty() {
+  // If we have modules to move, pause and store them
+  if !modules_to_move.is_empty() {
+    // Store the modules that will be moved
     let callback_storage = CALLBACK_DATA.get_or_init(|| Mutex::new(None));
-    *callback_storage.lock().unwrap() = Some(moved_modules);
-    eprintln!("MyBannerPlugin: Stored callback data");
+    let module_paths: Vec<String> = modules_to_move
+      .iter()
+      .map(|(id, _)| id.to_string())
+      .collect();
+    *callback_storage.lock().unwrap() = Some(module_paths.clone());
+
+    // Store modules to move for later execution
+    let modules_storage = MODULES_TO_MOVE.get_or_init(|| Mutex::new(Vec::new()));
+    *modules_storage.lock().unwrap() = module_paths;
+
+    // Set pause flag
+    *pause_storage.lock().unwrap() = true;
+
+    eprintln!("MyBannerPlugin: Pausing execution, waiting for next() call...");
+
+    // Return early to pause execution
+    return Ok(Some(true));
   }
 
   // Return true to indicate that we made changes
@@ -154,4 +204,15 @@ pub fn get_callback_data() -> Option<Vec<String>> {
   } else {
     None
   }
+}
+
+// Function to resume execution (will be called from JavaScript)
+#[napi]
+pub fn resume_execution() -> bool {
+  // Clear the pause flag
+  let pause_storage = IS_PAUSED.get_or_init(|| Mutex::new(false));
+  *pause_storage.lock().unwrap() = false;
+
+  eprintln!("MyBannerPlugin: Resume flag cleared, execution will continue on next hook call");
+  true
 }

@@ -5,6 +5,7 @@ const rspack = require("@rspack-template/core");
 const compiler = rspack({
   context: __dirname,
   mode: "development",
+  cache: false, // Disable cache to force re-generation
   entry: {
     main: "./src/index.js",
   },
@@ -14,7 +15,7 @@ const compiler = rspack({
   plugins: [
     new rspack.MyBannerPlugin({
       chunkName: "vendors",
-      callback: (movedModules) => {
+      callback: (movedModules, next) => {
         console.log("📦 Modules moved to vendors chunk:", movedModules);
         console.log(`Total modules moved: ${movedModules.length}`);
 
@@ -22,6 +23,15 @@ const compiler = rspack({
         movedModules.forEach((module, index) => {
           console.log(`  ${index + 1}. ${module}`);
         });
+
+        // Simulate some async work
+        console.log("⏳ Simulating some async work...");
+        setTimeout(() => {
+          console.log(
+            "✅ Async work completed, calling next() to resume plugin execution"
+          );
+          next(); // Resume the plugin execution
+        }, 2000);
       },
     }),
   ],
