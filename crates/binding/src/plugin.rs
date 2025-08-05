@@ -12,6 +12,8 @@ use std::sync::OnceLock;
 static CALLBACK_DATA: OnceLock<Mutex<Option<Vec<String>>>> = OnceLock::new();
 static IS_PAUSED: OnceLock<Mutex<bool>> = OnceLock::new();
 static MODULES_TO_MOVE: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+static MODULES_MOVED: OnceLock<Mutex<bool>> = OnceLock::new();
+static CHUNK_CREATION_REQUESTS: OnceLock<Mutex<Vec<(String, Vec<String>)>>> = OnceLock::new();
 
 /// A plugin that creates a vendors chunk and moves node_modules modules to it.
 #[plugin]
@@ -41,6 +43,7 @@ async fn optimize_chunk_modules(&self, compilation: &mut Compilation) -> Result<
   );
 
   // Create vendors chunk
+
   let (vendors_chunk_ukey, created) = Compilation::add_named_chunk(
     self.chunk_name.clone(),
     &mut compilation.chunk_by_ukey,
@@ -108,6 +111,57 @@ async fn optimize_chunk_modules(&self, compilation: &mut Compilation) -> Result<
 
       // Force the vendors chunk to be included in the output
       eprintln!("MyBannerPlugin: Vendors chunk should be emitted with modules");
+
+      // Set modules moved flag
+      let modules_moved_storage = MODULES_MOVED.get_or_init(|| Mutex::new(false));
+      *modules_moved_storage.lock().unwrap() = true;
+      eprintln!("MyBannerPlugin: Modules moved flag set to true");
+
+      // Process chunk creation requests after module movement
+      let requests_storage = CHUNK_CREATION_REQUESTS.get_or_init(|| Mutex::new(Vec::new()));
+      if let Ok(mut requests) = requests_storage.lock() {
+        eprintln!(
+          "MyBannerPlugin: Checking for chunk creation requests, count: {}",
+          requests.len()
+        );
+        while let Some((chunk_name, module_paths)) = requests.pop() {
+          eprintln!(
+            "MyBannerPlugin: Processing chunk creation request for '{}'",
+            chunk_name
+          );
+
+          // Create the new chunk
+          let (new_chunk_ukey, new_chunk_created) = Compilation::add_named_chunk(
+            chunk_name.clone(),
+            &mut compilation.chunk_by_ukey,
+            &mut compilation.named_chunks,
+          );
+
+          if new_chunk_created {
+            compilation.chunk_graph.add_chunk(new_chunk_ukey);
+            eprintln!("MyBannerPlugin: Created new chunk '{}'", chunk_name);
+          }
+
+          // Add modules to the new chunk
+          for module_path in module_paths {
+            // Find the module identifier by path
+            for module_identifier in compilation.built_modules() {
+              if module_identifier.to_string() == module_path {
+                compilation
+                  .chunk_graph
+                  .connect_chunk_and_module(new_chunk_ukey, *module_identifier);
+                eprintln!(
+                  "MyBannerPlugin: Added module '{}' to chunk '{}'",
+                  module_path, chunk_name
+                );
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        eprintln!("MyBannerPlugin: Failed to lock chunk creation requests storage");
+      }
 
       return Ok(Some(true));
     }
@@ -214,5 +268,36 @@ pub fn resume_execution() -> bool {
   *pause_storage.lock().unwrap() = false;
 
   eprintln!("MyBannerPlugin: Resume flag cleared, execution will continue on next hook call");
+  true
+}
+
+// Function to add a new chunk and connect modules to it
+#[napi]
+pub fn add_new_chunk(chunk_name: String, module_paths: Vec<String>) -> bool {
+  eprintln!(
+    "MyBannerPlugin: Adding new chunk '{}' with {} modules",
+    chunk_name,
+    module_paths.len()
+  );
+
+  // Check if modules have been moved
+  let modules_moved_storage = MODULES_MOVED.get_or_init(|| Mutex::new(false));
+  let modules_moved = *modules_moved_storage.lock().unwrap();
+
+  if !modules_moved {
+    eprintln!("MyBannerPlugin: Modules not yet moved, storing chunk creation request for later");
+    // Store the chunk creation request in a global storage
+    let requests_storage = CHUNK_CREATION_REQUESTS.get_or_init(|| Mutex::new(Vec::new()));
+
+    if let Ok(mut requests) = requests_storage.lock() {
+      requests.push((chunk_name, module_paths));
+      eprintln!("MyBannerPlugin: Stored chunk creation request");
+    }
+  } else {
+    eprintln!(
+      "MyBannerPlugin: Modules already moved, chunk creation request will be processed immediately"
+    );
+  }
+
   true
 }

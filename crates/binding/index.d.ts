@@ -7,6 +7,10 @@ export declare class ExternalObject<T> {
     [K: symbol]: T
   }
 }
+export declare function addNewChunk(chunkName: string, modulePaths: Array<string>): boolean
+
+export declare function addNewChunk(chunkName: string, modulePaths: Array<string>): boolean
+
 export declare function getCallbackData(): Array<string> | null
 
 export declare function registerMyBannerPlugin(): void

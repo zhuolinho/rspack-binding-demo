@@ -393,6 +393,8 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.addNewChunk = nativeBinding.addNewChunk
+module.exports.addNewChunk = nativeBinding.addNewChunk
 module.exports.getCallbackData = nativeBinding.getCallbackData
 module.exports.registerMyBannerPlugin = nativeBinding.registerMyBannerPlugin
 module.exports.resumeExecution = nativeBinding.resumeExecution

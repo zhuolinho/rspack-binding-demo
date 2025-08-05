@@ -34,3 +34,9 @@ register_plugin!("MyBannerPlugin", |_env: Env, options: Unknown<'_>| {
 
   Ok(Box::new(plugin::MyBannerPlugin::new(chunk_name)) as BoxPlugin)
 });
+
+// Export the add_new_chunk function
+#[napi]
+pub fn add_new_chunk(chunk_name: String, module_paths: Vec<String>) -> bool {
+  plugin::add_new_chunk(chunk_name, module_paths)
+}
