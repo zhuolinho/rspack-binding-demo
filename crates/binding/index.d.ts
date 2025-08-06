@@ -15,6 +15,10 @@ export declare function getCallbackData(): Array<string> | null
 
 export declare function registerMyBannerPlugin(): void
 
+export declare function removeModuleFromChunk(chunkName: string, modulePaths: Array<string>): boolean
+
+export declare function removeModuleFromChunk(chunkName: string, modulePaths: Array<string>): boolean
+
 export declare function resumeExecution(): boolean
 export declare class Assets {
   keys(): Array<string>

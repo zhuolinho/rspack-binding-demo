@@ -14,6 +14,7 @@ static IS_PAUSED: OnceLock<Mutex<bool>> = OnceLock::new();
 static MODULES_TO_MOVE: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 static MODULES_MOVED: OnceLock<Mutex<bool>> = OnceLock::new();
 static CHUNK_CREATION_REQUESTS: OnceLock<Mutex<Vec<(String, Vec<String>)>>> = OnceLock::new();
+static MODULE_REMOVAL_REQUESTS: OnceLock<Mutex<Vec<(String, Vec<String>)>>> = OnceLock::new();
 
 /// A plugin that creates a vendors chunk and moves node_modules modules to it.
 #[plugin]
@@ -163,6 +164,48 @@ async fn optimize_chunk_modules(&self, compilation: &mut Compilation) -> Result<
         eprintln!("MyBannerPlugin: Failed to lock chunk creation requests storage");
       }
 
+      // Process module removal requests after module movement
+      let removal_requests_storage = MODULE_REMOVAL_REQUESTS.get_or_init(|| Mutex::new(Vec::new()));
+      if let Ok(mut removal_requests) = removal_requests_storage.lock() {
+        eprintln!(
+          "MyBannerPlugin: Checking for module removal requests, count: {}",
+          removal_requests.len()
+        );
+        while let Some((chunk_name, module_paths)) = removal_requests.pop() {
+          eprintln!(
+            "MyBannerPlugin: Processing module removal request for chunk '{}'",
+            chunk_name
+          );
+
+          // Find the chunk by name
+          if let Some(chunk_ukey) = compilation.named_chunks.get(&chunk_name) {
+            // Remove modules from the chunk
+            for module_path in module_paths {
+              // Find the module identifier by path
+              for module_identifier in compilation.built_modules() {
+                if module_identifier.to_string() == module_path {
+                  compilation
+                    .chunk_graph
+                    .disconnect_chunk_and_module(chunk_ukey, *module_identifier);
+                  eprintln!(
+                    "MyBannerPlugin: Removed module '{}' from chunk '{}'",
+                    module_path, chunk_name
+                  );
+                  break;
+                }
+              }
+            }
+          } else {
+            eprintln!(
+              "MyBannerPlugin: Chunk '{}' not found for module removal",
+              chunk_name
+            );
+          }
+        }
+      } else {
+        eprintln!("MyBannerPlugin: Failed to lock module removal requests storage");
+      }
+
       return Ok(Some(true));
     }
   }
@@ -296,6 +339,37 @@ pub fn add_new_chunk(chunk_name: String, module_paths: Vec<String>) -> bool {
   } else {
     eprintln!(
       "MyBannerPlugin: Modules already moved, chunk creation request will be processed immediately"
+    );
+  }
+
+  true
+}
+
+// Function to remove modules from a chunk
+#[napi]
+pub fn remove_module_from_chunk(chunk_name: String, module_paths: Vec<String>) -> bool {
+  eprintln!(
+    "MyBannerPlugin: Removing {} modules from chunk '{}'",
+    module_paths.len(),
+    chunk_name
+  );
+
+  // Check if modules have been moved
+  let modules_moved_storage = MODULES_MOVED.get_or_init(|| Mutex::new(false));
+  let modules_moved = *modules_moved_storage.lock().unwrap();
+
+  if !modules_moved {
+    eprintln!("MyBannerPlugin: Modules not yet moved, storing module removal request for later");
+    // Store the module removal request in a global storage
+    let requests_storage = MODULE_REMOVAL_REQUESTS.get_or_init(|| Mutex::new(Vec::new()));
+
+    if let Ok(mut requests) = requests_storage.lock() {
+      requests.push((chunk_name, module_paths));
+      eprintln!("MyBannerPlugin: Stored module removal request");
+    }
+  } else {
+    eprintln!(
+      "MyBannerPlugin: Modules already moved, module removal request will be processed immediately"
     );
   }
 

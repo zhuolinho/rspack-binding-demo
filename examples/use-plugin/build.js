@@ -15,7 +15,7 @@ const compiler = rspack({
   plugins: [
     new rspack.MyBannerPlugin({
       chunkName: "vendors",
-      callback: (movedModules, next, addNewChunk) => {
+      callback: (movedModules, next, addNewChunk, removeModuleFromChunk) => {
         console.log("📦 Modules moved to vendors chunk:", movedModules);
         console.log(`Total modules moved: ${movedModules.length}`);
 
@@ -30,6 +30,14 @@ const compiler = rspack({
         addNewChunk("custom-chunk", modulesForNewChunk);
         console.log(
           `✅ Created new chunk 'custom-chunk' with ${modulesForNewChunk.length} modules`
+        );
+
+        // Example: Remove some modules from vendors chunk
+        console.log("🗑️ Removing some modules from vendors chunk...");
+        const modulesToRemove = movedModules.slice(0, 1); // Remove first module
+        removeModuleFromChunk("vendors", modulesToRemove);
+        console.log(
+          `✅ Removed ${modulesToRemove.length} modules from 'vendors' chunk`
         );
 
         // Simulate some async work

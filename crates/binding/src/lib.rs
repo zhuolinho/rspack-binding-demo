@@ -40,3 +40,9 @@ register_plugin!("MyBannerPlugin", |_env: Env, options: Unknown<'_>| {
 pub fn add_new_chunk(chunk_name: String, module_paths: Vec<String>) -> bool {
   plugin::add_new_chunk(chunk_name, module_paths)
 }
+
+// Export the remove_module_from_chunk function
+#[napi]
+pub fn remove_module_from_chunk(chunk_name: String, module_paths: Vec<String>) -> bool {
+  plugin::remove_module_from_chunk(chunk_name, module_paths)
+}
