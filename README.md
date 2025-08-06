@@ -61,25 +61,58 @@ After running the plugin, you'll get:
 
 #### Callback Support
 
-The plugin supports a callback function that receives an array of module paths that were moved to the vendors chunk:
+The plugin supports a callback function that receives detailed information about moved modules and all chunks:
 
 ```javascript
 new rspack.MyBannerPlugin({
   chunkName: "vendors",
-  callback: (movedModules) => {
-    // movedModules is an array of strings containing the paths of moved modules
-    console.log("Moved modules:", movedModules);
+  callback: (
+    movedModules,
+    chunks,
+    next,
+    addNewChunk,
+    removeModuleFromChunk
+  ) => {
+    console.log("📦 Modules moved to vendors chunk:", movedModules);
 
-    // Example output:
-    // Moved modules: [
-    //   "/path/to/node_modules/lodash/lodash.js",
-    //   "/path/to/node_modules/react/react.js"
-    // ]
+    // Display all chunks and their modules
+    console.log("🔍 All chunks and their modules:");
+    chunks.forEach(([chunkName, modules]) => {
+      console.log(`  Chunk: "${chunkName}" (${modules.length} modules)`);
+      modules.forEach((module) => console.log(`    - ${module}`));
+    });
+
+    // Analyze chunks
+    chunks.forEach(([chunkName, modules]) => {
+      const nodeModulesCount = modules.filter((m) =>
+        m.includes("node_modules")
+      ).length;
+      const appModulesCount = modules.filter(
+        (m) => !m.includes("node_modules")
+      ).length;
+      console.log(
+        `Chunk "${chunkName}": ${nodeModulesCount} node_modules, ${appModulesCount} app modules`
+      );
+    });
+
+    // Create new chunks or modify existing ones
+    addNewChunk("custom-chunk", movedModules.slice(0, 2));
+    removeModuleFromChunk("vendors", movedModules.slice(0, 1));
+
+    next(); // Resume execution
   },
 });
 ```
 
-The callback is called automatically when modules are moved to the vendors chunk, providing you with real-time information about which modules were processed.
+#### Callback Parameters
+
+- `movedModules`: Array of module paths that were moved to the vendors chunk
+- `chunks`: Array of `[chunkName, modulePaths[]]` tuples containing all chunks and their modules
+- `next`: Function to call when you want to resume the plugin execution
+- `addNewChunk`: Function to create a new chunk with specified modules
+- `removeModuleFromChunk`: Function to remove modules from a chunk
+
+The callback is called automatically when modules are moved to the vendors chunk, providing you with real-time information about which modules were processed and full control over chunk management.
 
 #### Technical Details
 

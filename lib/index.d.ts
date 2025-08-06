@@ -12,9 +12,18 @@ interface MyBannerPluginOptions {
   /**
    * Callback function that will be called when modules are moved to the vendors chunk.
    * @param movedModules Array of module paths that were moved to the vendors chunk
+   * @param chunks Array of chunks with their modules, each item is [chunkName, modulePaths]
    * @param next Function to call when you want to resume the plugin execution
+   * @param addNewChunk Function to create a new chunk with specified modules
+   * @param removeModuleFromChunk Function to remove modules from a chunk
    */
-  callback?: (movedModules: string[], next: () => void) => void;
+  callback?: (
+    movedModules: string[],
+    chunks: [string, string[]][],
+    next: () => void,
+    addNewChunk: (chunkName: string, modulePaths: string[]) => boolean,
+    removeModuleFromChunk: (chunkName: string, modulePaths: string[]) => boolean
+  ) => void;
 }
 
 /**

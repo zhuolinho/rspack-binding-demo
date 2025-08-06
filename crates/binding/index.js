@@ -396,6 +396,7 @@ module.exports = nativeBinding
 module.exports.addNewChunk = nativeBinding.addNewChunk
 module.exports.addNewChunk = nativeBinding.addNewChunk
 module.exports.getCallbackData = nativeBinding.getCallbackData
+module.exports.getChunksData = nativeBinding.getChunksData
 module.exports.registerMyBannerPlugin = nativeBinding.registerMyBannerPlugin
 module.exports.removeModuleFromChunk = nativeBinding.removeModuleFromChunk
 module.exports.removeModuleFromChunk = nativeBinding.removeModuleFromChunk

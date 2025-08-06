@@ -13,6 +13,8 @@ export declare function addNewChunk(chunkName: string, modulePaths: Array<string
 
 export declare function getCallbackData(): Array<string> | null
 
+export declare function getChunksData(): Array<[string, Array<string>]> | null
+
 export declare function registerMyBannerPlugin(): void
 
 export declare function removeModuleFromChunk(chunkName: string, modulePaths: Array<string>): boolean

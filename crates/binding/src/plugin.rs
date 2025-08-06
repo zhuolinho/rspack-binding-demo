@@ -10,6 +10,7 @@ use std::sync::OnceLock;
 
 // Global storage for callback data and pause state
 static CALLBACK_DATA: OnceLock<Mutex<Option<Vec<String>>>> = OnceLock::new();
+static CHUNKS_DATA: OnceLock<Mutex<Option<Vec<(String, Vec<String>)>>>> = OnceLock::new();
 static IS_PAUSED: OnceLock<Mutex<bool>> = OnceLock::new();
 static MODULES_TO_MOVE: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 static MODULES_MOVED: OnceLock<Mutex<bool>> = OnceLock::new();
@@ -245,6 +246,58 @@ async fn optimize_chunk_modules(&self, compilation: &mut Compilation) -> Result<
 
   // If we have modules to move, pause and store them
   if !modules_to_move.is_empty() {
+    // Collect chunks information
+    let mut chunks_info = Vec::new();
+
+    // Get all chunks from compilation
+    for (chunk_name, chunk_ukey) in &compilation.named_chunks {
+      let mut chunk_modules = Vec::new();
+
+      // Get all modules in this chunk
+      for module_identifier in compilation.built_modules() {
+        let module_chunks = compilation
+          .chunk_graph
+          .get_module_chunks(*module_identifier);
+
+        if module_chunks.contains(chunk_ukey) {
+          chunk_modules.push(module_identifier.to_string());
+        }
+      }
+
+      chunks_info.push((chunk_name.clone(), chunk_modules));
+    }
+
+    // Also include chunks without names (like main chunk)
+    for chunk_ukey in compilation.chunk_by_ukey.keys() {
+      let mut found_named = false;
+      for (_, named_chunk_ukey) in &compilation.named_chunks {
+        if chunk_ukey == named_chunk_ukey {
+          found_named = true;
+          break;
+        }
+      }
+
+      if !found_named {
+        let mut chunk_modules = Vec::new();
+        for module_identifier in compilation.built_modules() {
+          let module_chunks = compilation
+            .chunk_graph
+            .get_module_chunks(*module_identifier);
+
+          if module_chunks.contains(chunk_ukey) {
+            chunk_modules.push(module_identifier.to_string());
+          }
+        }
+
+        // Use chunk ukey as name for unnamed chunks
+        chunks_info.push((format!("{:?}", chunk_ukey), chunk_modules));
+      }
+    }
+
+    // Store chunks information
+    let chunks_storage = CHUNKS_DATA.get_or_init(|| Mutex::new(None));
+    *chunks_storage.lock().unwrap() = Some(chunks_info);
+
     // Store the modules that will be moved
     let callback_storage = CALLBACK_DATA.get_or_init(|| Mutex::new(None));
     let module_paths: Vec<String> = modules_to_move
@@ -294,6 +347,20 @@ impl Plugin for MyBannerPlugin {
 pub fn get_callback_data() -> Option<Vec<String>> {
   if let Some(callback_storage) = CALLBACK_DATA.get() {
     if let Ok(mut data) = callback_storage.lock() {
+      data.take() // Take the data and leave None
+    } else {
+      None
+    }
+  } else {
+    None
+  }
+}
+
+// Function to get chunks data (will be called from JavaScript)
+#[napi]
+pub fn get_chunks_data() -> Option<Vec<(String, Vec<String>)>> {
+  if let Some(chunks_storage) = CHUNKS_DATA.get() {
+    if let Ok(mut data) = chunks_storage.lock() {
       data.take() // Take the data and leave None
     } else {
       None
